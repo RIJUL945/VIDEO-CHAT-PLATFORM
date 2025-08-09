@@ -43,12 +43,15 @@ app.post('/create-room', (req, res) => {
   
   console.log(`Room created: ${roomId} by ${ownerName}`);
   
-  res.json({
-    success: true,
-    roomId: roomId,
-    inviteLink: `${req.protocol}://${req.get('host')}/room/${roomId}`,
-    maxCapacity: maxCapacity
-  });
+// Force HTTPS for public domains
+const protocol = req.get('host').includes('localhost') ? req.protocol : 'https';
+
+res.json({
+  success: true,
+  roomId: roomId,
+  inviteLink: `${protocol}://${req.get('host')}/room/${roomId}`,
+  maxCapacity: maxCapacity
+});
 });
 
 // Socket handling
