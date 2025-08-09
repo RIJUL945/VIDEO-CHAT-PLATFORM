@@ -71,10 +71,10 @@ io.on('connection', (socket) => {
       return;
     }
     
-    // Add user to room
+    // Add participant to room
     const participant = {
-      id: socket.id,
-      name: userName,
+      socketId: socket.id,
+      userName: userName,
       joinedAt: new Date()
     };
     
@@ -83,42 +83,26 @@ io.on('connection', (socket) => {
     socket.roomId = roomId;
     socket.userName = userName;
     
-    console.log(`${userName} joined room ${roomId}. Total: ${room.participants.length}`);
+    // Notify existing participants about new user
+    socket.to(roomId).emit('user-joined', participant);
     
-    // Notify user they joined successfully
-    socket.emit('joined-room', {
+    // Send current participants to new user
+    socket.emit('room-joined', {
       roomId: roomId,
       participants: room.participants,
       maxCapacity: room.maxCapacity
     });
     
-    // Notify others in room
-    socket.to(roomId).emit('user-joined', participant);
-    
-    // Update participant count for everyone
-    io.to(roomId).emit('participant-update', {
+    // Update participant count for all
+    io.to(roomId).emit('participant-count-update', {
       count: room.participants.length,
-      maxCapacity: room.maxCapacity,
-      participants: room.participants
+      maxCapacity: room.maxCapacity
     });
   });
   
-  // Handle chat messages
-  socket.on('send-message', (data) => {
-    const { roomId, message } = data;
-    if (socket.roomId === roomId) {
-      io.to(roomId).emit('new-message', {
-        userName: socket.userName,
-        message: message,
-        timestamp: new Date(),
-        senderId: socket.id
-      });
-      console.log(`Message in ${roomId} from ${socket.userName}: ${message}`);
-    }
-  });
-  
-  // Handle WebRTC signaling
+  // WebRTC Signaling Events
   socket.on('offer', (data) => {
+    console.log(`Offer from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit('offer', {
       offer: data.offer,
       sender: socket.id,
@@ -127,46 +111,61 @@ io.on('connection', (socket) => {
   });
   
   socket.on('answer', (data) => {
+    console.log(`Answer from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit('answer', {
       answer: data.answer,
-      sender: socket.id
+      sender: socket.id,
+      senderName: socket.userName
     });
   });
   
   socket.on('ice-candidate', (data) => {
+    console.log(`ICE candidate from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit('ice-candidate', {
       candidate: data.candidate,
       sender: socket.id
     });
   });
   
-  // Handle disconnect
+  // Chat message handling
+  socket.on('chat-message', (data) => {
+    const { roomId, message, userName } = data;
+    console.log(`Chat message in ${roomId} from ${userName}: ${message}`);
+    
+    io.to(roomId).emit('chat-message', {
+      message: message,
+      userName: userName,
+      timestamp: new Date(),
+      socketId: socket.id
+    });
+  });
+  
+  // Handle user disconnect
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
     
     if (socket.roomId && rooms[socket.roomId]) {
       const room = rooms[socket.roomId];
-      room.participants = room.participants.filter(p => p.id !== socket.id);
       
-      console.log(`${socket.userName} left room ${socket.roomId}. Remaining: ${room.participants.length}`);
+      // Remove participant from room
+      room.participants = room.participants.filter(p => p.socketId !== socket.id);
       
-      // Notify others
+      // Notify other participants
       socket.to(socket.roomId).emit('user-left', {
-        userId: socket.id,
+        socketId: socket.id,
         userName: socket.userName
       });
       
       // Update participant count
-      io.to(socket.roomId).emit('participant-update', {
+      io.to(socket.roomId).emit('participant-count-update', {
         count: room.participants.length,
-        maxCapacity: room.maxCapacity,
-        participants: room.participants
+        maxCapacity: room.maxCapacity
       });
       
-      // Delete empty rooms
+      // Clean up empty rooms
       if (room.participants.length === 0) {
         delete rooms[socket.roomId];
-        console.log(`Room ${socket.roomId} deleted - empty`);
+        console.log(`Room ${socket.roomId} deleted (empty)`);
       }
     }
   });
