@@ -1,0 +1,24 @@
+{
+  "name": "video-chat-platform",
+  "version": "1.0.0",
+  "description": "Real-time video/voice chat platform",
+  "main": "simple-server.js",
+  "scripts": {
+    "start": "node simple-server.js",
+    "dev": "nodemon simple-server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": ["video-chat", "webrtc", "realtime", "socket.io"],
+  "author": "Your Name",
+  "license": "MIT"
+}
