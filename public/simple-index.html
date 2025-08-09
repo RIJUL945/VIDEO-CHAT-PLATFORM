@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Video Chat Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(40, 167, 69, 0.4);
+        }
+        
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(40, 167, 69, 0.2);
+            border-radius: 10px;
+            border: 2px solid rgba(40, 167, 69, 0.3);
+            display: none;
+        }
+        
+        .invite-link {
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            word-break: break-all;
+            font-family: monospace;
+        }
+        
+        .error {
+            background: rgba(220, 53, 69, 0.2);
+            border: 2px solid rgba(220, 53, 69, 0.3);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .loading {
+            text-align: center;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Video Chat</h1>
+        
+        <form id="createRoomForm">
+            <div class="form-group">
+                <label for="ownerName">Your Name:</label>
+                <input type="text" id="ownerName" placeholder="Enter your name" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="maxCapacity">Max Participants:</label>
+                <select id="maxCapacity">
+                    <option value="2">2 people</option>
+                    <option value="4">4 people</option>
+                    <option value="6">6 people</option>
+                    <option value="8">8 people</option>
+                    <option value="10" selected>10 people</option>
+                </select>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Create Room</button>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Creating room...</p>
+        </div>
+        
+        <div class="result" id="result">
+            <h3>🎉 Room Created!</h3>
+            <p><strong>Room ID:</strong> <span id="roomId"></span></p>
+            <p><strong>Invite Link:</strong></p>
+            <div class="invite-link" id="inviteLink"></div>
+            <button class="btn btn-primary" onclick="copyLink()">📋 Copy Link</button>
+            <button class="btn btn-primary" onclick="joinRoom()">🚀 Join Room</button>
+        </div>
+        
+        <div class="error" id="error"></div>
+    </div>
+
+    <script>
+        let currentRoom = null;
+        
+        document.getElementById('createRoomForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const ownerName = document.getElementById('ownerName').value.trim();
+            const maxCapacity = document.getElementById('maxCapacity').value;
+            
+            if (!ownerName) {
+                showError('Please enter your name');
+                return;
+            }
+            
+            showLoading(true);
+            hideError();
+            
+            try {
+                console.log('Creating room for:', ownerName, 'with capacity:', maxCapacity);
+                
+                const response = await fetch('/create-room', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ownerName: ownerName,
+                        maxCapacity: maxCapacity
+                    })
+                });
+                
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                if (data.success) {
+                    currentRoom = data;
+                    showResult(data);
+                    
+                    // Store in session for room joining
+                    sessionStorage.setItem('userName', ownerName);
+                    sessionStorage.setItem('roomId', data.roomId);
+                    sessionStorage.setItem('isOwner', 'true');
+                    
+                    console.log('Room created successfully:', data.roomId);
+                } else {
+                    console.error('Server returned error:', data);
+                    showError(data.error || 'Failed to create room');
+                }
+            } catch (error) {
+                console.error('Error creating room:', error);
+                showError(`Failed to create room: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        });
+        
+        function showResult(data) {
+            document.getElementById('roomId').textContent = data.roomId;
+            document.getElementById('inviteLink').textContent = data.inviteLink;
+            document.getElementById('result').style.display = 'block';
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+        
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+        
+        function copyLink() {
+            const link = document.getElementById('inviteLink').textContent;
+            navigator.clipboard.writeText(link).then(() => {
+                alert('Link copied to clipboard!');
+            }).catch(() => {
+                // Fallback
+                const textArea = document.createElement('textarea');
+                textArea.value = link;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('Link copied to clipboard!');
+            });
+        }
+        
+        function joinRoom() {
+            if (currentRoom) {
+                window.location.href = `/room/${currentRoom.roomId}`;
+            }
+        }
+    </script>
+</body>
+</html>
