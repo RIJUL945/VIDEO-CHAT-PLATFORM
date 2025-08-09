@@ -100,9 +100,9 @@ io.on('connection', (socket) => {
     });
   });
   
-  // WebRTC Signaling Events
+  // WEBRTC SIGNALING EVENTS - THESE ARE THE MISSING PIECES!
   socket.on('offer', (data) => {
-    console.log(`Offer from ${socket.id} to ${data.target}`);
+    console.log(`WebRTC offer from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit('offer', {
       offer: data.offer,
       sender: socket.id,
@@ -111,7 +111,7 @@ io.on('connection', (socket) => {
   });
   
   socket.on('answer', (data) => {
-    console.log(`Answer from ${socket.id} to ${data.target}`);
+    console.log(`WebRTC answer from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit('answer', {
       answer: data.answer,
       sender: socket.id,
