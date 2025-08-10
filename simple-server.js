@@ -26,8 +26,9 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'simple-index.html'));
 });
 
+// Serve your beautiful zoom-style room
 app.get('/room/:roomId', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'simple-room.html'));
+  res.sendFile(path.join(__dirname, 'zoom-style-room.html'));
 });
 
 // Create room API
@@ -63,11 +64,10 @@ io.on('connection', (socket) => {
   socket.on('join-room', (data) => {
     const { roomId, userName } = data;
     console.log(`${userName} trying to join room ${roomId}`);
-    console.log('Available rooms:', Object.keys(rooms));
     
     if (!rooms[roomId]) {
-      console.log(`❌ Room ${roomId} not found. Available rooms:`, Object.keys(rooms));
-      // Changed from 'error' to 'join-error' to prevent homepage redirect
+      console.log(`❌ Room ${roomId} not found`);
+      // Use 'join-error' instead of 'error' to prevent homepage redirect
       socket.emit('join-error', { message: 'Room not found' });
       return;
     }
@@ -93,7 +93,7 @@ io.on('connection', (socket) => {
     
     console.log(`${userName} joined room ${roomId}. Total: ${room.participants.length}`);
     
-    // Notify user they joined successfully
+    // Notify user they joined successfully (matching your UI expectations)
     socket.emit('room-joined', {
       roomId: roomId,
       participants: room.participants,
@@ -103,7 +103,7 @@ io.on('connection', (socket) => {
     // Notify others in room about new participant
     socket.to(roomId).emit('user-joined', participant);
     
-    // Update participant count for everyone
+    // Update participant count for everyone (matching your UI)
     io.to(roomId).emit('participant-update', {
       count: room.participants.length,
       maxCapacity: room.maxCapacity,
@@ -111,7 +111,7 @@ io.on('connection', (socket) => {
     });
   });
   
-  // Handle user leaving room
+  // Handle user leaving
   socket.on('leave-room', () => {
     if (socket.roomId) {
       const room = rooms[socket.roomId];
@@ -123,7 +123,6 @@ io.on('connection', (socket) => {
           maxCapacity: room.maxCapacity,
           participants: room.participants
         });
-        console.log(`${socket.userName} left room ${socket.roomId}`);
       }
     }
   });
@@ -140,12 +139,11 @@ io.on('connection', (socket) => {
           maxCapacity: room.maxCapacity,
           participants: room.participants
         });
-        console.log(`${socket.userName} disconnected from room ${socket.roomId}`);
       }
     }
   });
   
-  // Handle chat messages
+  // Chat messages (matching your UI)
   socket.on('send-message', (data) => {
     const { roomId, message } = data;
     if (socket.roomId === roomId) {
@@ -155,11 +153,10 @@ io.on('connection', (socket) => {
         timestamp: new Date(),
         senderId: socket.id
       });
-      console.log(`Message in ${roomId} from ${socket.userName}: ${message}`);
     }
   });
   
-  // WebRTC signaling - THESE WERE MISSING!
+  // WebRTC signaling (the missing piece for video/audio!)
   socket.on('offer', (data) => {
     socket.to(data.target).emit('offer', {
       offer: data.offer,
@@ -185,5 +182,4 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log(`🚀 Video Chat Server running on port ${PORT}`);
-  console.log(`📱 Access your platform at: http://localhost:${PORT}`);
 });
