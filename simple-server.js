@@ -43,15 +43,15 @@ app.post('/create-room', (req, res) => {
   
   console.log(`Room created: ${roomId} by ${ownerName}`);
   
-// Force HTTPS for public domains
-const protocol = req.get('host').includes('localhost') ? req.protocol : 'https';
-
-res.json({
-  success: true,
-  roomId: roomId,
-  inviteLink: `${protocol}://${req.get('host')}/room/${roomId}`,
-  maxCapacity: maxCapacity
-});
+  // Force HTTPS for public domains
+  const protocol = req.get('host').includes('localhost') ? req.protocol : 'https';
+  
+  res.json({
+    success: true,
+    roomId: roomId,
+    inviteLink: `${protocol}://${req.get('host')}/room/${roomId}`,
+    maxCapacity: maxCapacity
+  });
 });
 
 // Socket handling
@@ -61,8 +61,11 @@ io.on('connection', (socket) => {
   socket.on('join-room', (data) => {
     const { roomId, userName } = data;
     console.log(`${userName} trying to join room ${roomId}`);
+    console.log('Available rooms:', Object.keys(rooms));
+    console.log('Room exists?', !!rooms[roomId]);
     
     if (!rooms[roomId]) {
+      console.log(`❌ Room ${roomId} not found. Available rooms:`, Object.keys(rooms));
       socket.emit('error', 'Room not found');
       return;
     }
@@ -74,10 +77,10 @@ io.on('connection', (socket) => {
       return;
     }
     
-    // Add participant to room
+    // Add user to room
     const participant = {
-      socketId: socket.id,
-      userName: userName,
+      id: socket.id,
+      name: userName,
       joinedAt: new Date()
     };
     
@@ -86,26 +89,42 @@ io.on('connection', (socket) => {
     socket.roomId = roomId;
     socket.userName = userName;
     
-    // Notify existing participants about new user
-    socket.to(roomId).emit('user-joined', participant);
+    console.log(`${userName} joined room ${roomId}. Total: ${room.participants.length}`);
     
-    // Send current participants to new user
-    socket.emit('room-joined', {
+    // Notify user they joined successfully
+    socket.emit('joined-room', {
       roomId: roomId,
       participants: room.participants,
       maxCapacity: room.maxCapacity
     });
     
-    // Update participant count for all
-    io.to(roomId).emit('participant-count-update', {
+    // Notify others in room
+    socket.to(roomId).emit('user-joined', participant);
+    
+    // Update participant count for everyone
+    io.to(roomId).emit('participant-update', {
       count: room.participants.length,
-      maxCapacity: room.maxCapacity
+      maxCapacity: room.maxCapacity,
+      participants: room.participants
     });
   });
   
-  // WEBRTC SIGNALING EVENTS - THESE ARE THE MISSING PIECES!
+  // Handle chat messages
+  socket.on('send-message', (data) => {
+    const { roomId, message } = data;
+    if (socket.roomId === roomId) {
+      io.to(roomId).emit('new-message', {
+        userName: socket.userName,
+        message: message,
+        timestamp: new Date(),
+        senderId: socket.id
+      });
+      console.log(`Message in ${roomId} from ${socket.userName}: ${message}`);
+    }
+  });
+  
+  // Handle WebRTC signaling
   socket.on('offer', (data) => {
-    console.log(`WebRTC offer from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit('offer', {
       offer: data.offer,
       sender: socket.id,
@@ -114,61 +133,46 @@ io.on('connection', (socket) => {
   });
   
   socket.on('answer', (data) => {
-    console.log(`WebRTC answer from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit('answer', {
       answer: data.answer,
-      sender: socket.id,
-      senderName: socket.userName
+      sender: socket.id
     });
   });
   
   socket.on('ice-candidate', (data) => {
-    console.log(`ICE candidate from ${socket.id} to ${data.target}`);
     socket.to(data.target).emit('ice-candidate', {
       candidate: data.candidate,
       sender: socket.id
     });
   });
   
-  // Chat message handling
-  socket.on('chat-message', (data) => {
-    const { roomId, message, userName } = data;
-    console.log(`Chat message in ${roomId} from ${userName}: ${message}`);
-    
-    io.to(roomId).emit('chat-message', {
-      message: message,
-      userName: userName,
-      timestamp: new Date(),
-      socketId: socket.id
-    });
-  });
-  
-  // Handle user disconnect
+  // Handle disconnect
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
     
     if (socket.roomId && rooms[socket.roomId]) {
       const room = rooms[socket.roomId];
+      room.participants = room.participants.filter(p => p.id !== socket.id);
       
-      // Remove participant from room
-      room.participants = room.participants.filter(p => p.socketId !== socket.id);
+      console.log(`${socket.userName} left room ${socket.roomId}. Remaining: ${room.participants.length}`);
       
-      // Notify other participants
+      // Notify others
       socket.to(socket.roomId).emit('user-left', {
-        socketId: socket.id,
+        userId: socket.id,
         userName: socket.userName
       });
       
       // Update participant count
-      io.to(socket.roomId).emit('participant-count-update', {
+      io.to(socket.roomId).emit('participant-update', {
         count: room.participants.length,
-        maxCapacity: room.maxCapacity
+        maxCapacity: room.maxCapacity,
+        participants: room.participants
       });
       
-      // Clean up empty rooms
+      // Delete empty rooms
       if (room.participants.length === 0) {
         delete rooms[socket.roomId];
-        console.log(`Room ${socket.roomId} deleted (empty)`);
+        console.log(`Room ${socket.roomId} deleted - empty`);
       }
     }
   });
