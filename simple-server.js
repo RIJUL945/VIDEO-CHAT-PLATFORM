@@ -81,8 +81,8 @@ io.on('connection', (socket) => {
     
     // Add user to room
     const participant = {
-      id: socket.id,
-      name: userName,
+      socketId: socket.id, // Your UI expects 'socketId', not 'id'
+      userName: userName,  // Your UI expects 'userName', not 'name'
       joinedAt: new Date()
     };
     
@@ -93,17 +93,17 @@ io.on('connection', (socket) => {
     
     console.log(`${userName} joined room ${roomId}. Total: ${room.participants.length}`);
     
-    // Notify user they joined successfully
+    // Notify user they joined successfully (matching your UI expectations)
     socket.emit('room-joined', {
       roomId: roomId,
       participants: room.participants,
       maxCapacity: room.maxCapacity
     });
     
-    // Notify others in room about new participant
+    // Notify others in room about new participant (matching your UI expectations)
     socket.to(roomId).emit('user-joined', participant);
     
-    // Update participant count for everyone
+    // Update participant count for everyone (matching your UI expectations)
     io.to(roomId).emit('participant-update', {
       count: room.participants.length,
       maxCapacity: room.maxCapacity,
@@ -116,8 +116,8 @@ io.on('connection', (socket) => {
     if (socket.roomId) {
       const room = rooms[socket.roomId];
       if (room) {
-        room.participants = room.participants.filter(p => p.id !== socket.id);
-        socket.to(socket.roomId).emit('user-left', { id: socket.id, name: socket.userName });
+        room.participants = room.participants.filter(p => p.socketId !== socket.id);
+        socket.to(socket.roomId).emit('user-left', { socketId: socket.id, userName: socket.userName });
         io.to(socket.roomId).emit('participant-update', {
           count: room.participants.length,
           maxCapacity: room.maxCapacity,
@@ -132,8 +132,8 @@ io.on('connection', (socket) => {
     if (socket.roomId) {
       const room = rooms[socket.roomId];
       if (room) {
-        room.participants = room.participants.filter(p => p.id !== socket.id);
-        socket.to(socket.roomId).emit('user-left', { id: socket.id, name: socket.userName });
+        room.participants = room.participants.filter(p => p.socketId !== socket.id);
+        socket.to(socket.roomId).emit('user-left', { socketId: socket.id, userName: socket.userName });
         io.to(socket.roomId).emit('participant-update', {
           count: room.participants.length,
           maxCapacity: room.maxCapacity,
@@ -143,11 +143,11 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Chat messages
-  socket.on('send-message', (data) => {
+  // Chat messages (matching your UI expectations)
+  socket.on('chat-message', (data) => {
     const { roomId, message } = data;
     if (socket.roomId === roomId) {
-      io.to(roomId).emit('new-message', {
+      io.to(roomId).emit('chat-message', {
         userName: socket.userName,
         message: message,
         timestamp: new Date(),
