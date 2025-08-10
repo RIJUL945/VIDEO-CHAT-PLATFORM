@@ -40,12 +40,7 @@ app.post('/create-room', (req, res) => {
     owner: ownerName,
     maxCapacity: parseInt(maxCapacity),
     participants: [],
-    created: new Date(),
-    isLocked: false,
-    password: null,
-    waitingRoom: [],
-    chatHistory: [],
-    isRecording: false
+    created: new Date()
   };
   
   console.log(`Room created: ${roomId} by ${ownerName}`);
@@ -65,56 +60,36 @@ app.post('/create-room', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
   
-  // Join Room
   socket.on('join-room', (data) => {
-    const { roomId, userName, password = null } = data;
+    const { roomId, userName } = data;
     console.log(`${userName} trying to join room ${roomId}`);
+    console.log('Available rooms:', Object.keys(rooms));
     
     if (!rooms[roomId]) {
-      console.log(`❌ Room ${roomId} not found`);
+      console.log(`❌ Room ${roomId} not found. Available rooms:`, Object.keys(rooms));
+      // Changed from 'error' to 'join-error' to prevent homepage redirect
       socket.emit('join-error', { message: 'Room not found' });
       return;
     }
     
     const room = rooms[roomId];
     
-    // Check password if room is protected
-    if (room.password && room.password !== password) {
-      socket.emit('join-error', { message: 'Incorrect password' });
-      return;
-    }
-    
-    // Check if room is locked
-    if (room.isLocked && room.participants.length > 0) {
-      socket.emit('join-error', { message: 'Room is locked' });
-      return;
-    }
-    
-    // Check capacity
     if (room.participants.length >= room.maxCapacity) {
       socket.emit('join-error', { message: 'Room is full' });
       return;
     }
     
-    // Create participant object
+    // Add user to room
     const participant = {
       id: socket.id,
       name: userName,
-      joinedAt: new Date(),
-      isHost: room.participants.length === 0, // First person is host
-      isMuted: false,
-      isVideoOff: false,
-      isHandRaised: false,
-      isScreenSharing: false,
-      connectionQuality: 'good'
+      joinedAt: new Date()
     };
     
-    // Add to room
     room.participants.push(participant);
     socket.join(roomId);
     socket.roomId = roomId;
     socket.userName = userName;
-    socket.isHost = participant.isHost;
     
     console.log(`${userName} joined room ${roomId}. Total: ${room.participants.length}`);
     
@@ -122,35 +97,33 @@ io.on('connection', (socket) => {
     socket.emit('room-joined', {
       roomId: roomId,
       participants: room.participants,
-      isHost: participant.isHost,
-      chatHistory: room.chatHistory
+      maxCapacity: room.maxCapacity
     });
     
     // Notify others in room about new participant
     socket.to(roomId).emit('user-joined', participant);
     
-    // Send updated participant list to everyone
-    io.to(roomId).emit('participants-updated', room.participants);
+    // Update participant count for everyone
+    io.to(roomId).emit('participant-update', {
+      count: room.participants.length,
+      maxCapacity: room.maxCapacity,
+      participants: room.participants
+    });
   });
   
-  // Leave Room
+  // Handle user leaving room
   socket.on('leave-room', () => {
     if (socket.roomId) {
       const room = rooms[socket.roomId];
       if (room) {
         room.participants = room.participants.filter(p => p.id !== socket.id);
-        socket.to(socket.roomId).emit('user-left', { 
-          id: socket.id, 
-          name: socket.userName 
+        socket.to(socket.roomId).emit('user-left', { id: socket.id, name: socket.userName });
+        io.to(socket.roomId).emit('participant-update', {
+          count: room.participants.length,
+          maxCapacity: room.maxCapacity,
+          participants: room.participants
         });
-        io.to(socket.roomId).emit('participants-updated', room.participants);
         console.log(`${socket.userName} left room ${socket.roomId}`);
-        
-        // If host left, assign new host
-        if (socket.isHost && room.participants.length > 0) {
-          room.participants[0].isHost = true;
-          io.to(socket.roomId).emit('new-host', room.participants[0]);
-        }
       }
     }
   });
@@ -161,23 +134,32 @@ io.on('connection', (socket) => {
       const room = rooms[socket.roomId];
       if (room) {
         room.participants = room.participants.filter(p => p.id !== socket.id);
-        socket.to(socket.roomId).emit('user-left', { 
-          id: socket.id, 
-          name: socket.userName 
+        socket.to(socket.roomId).emit('user-left', { id: socket.id, name: socket.userName });
+        io.to(socket.roomId).emit('participant-update', {
+          count: room.participants.length,
+          maxCapacity: room.maxCapacity,
+          participants: room.participants
         });
-        io.to(socket.roomId).emit('participants-updated', room.participants);
         console.log(`${socket.userName} disconnected from room ${socket.roomId}`);
-        
-        // If host disconnected, assign new host
-        if (socket.isHost && room.participants.length > 0) {
-          room.participants[0].isHost = true;
-          io.to(socket.roomId).emit('new-host', room.participants[0]);
-        }
       }
     }
   });
   
-  // WebRTC Signaling
+  // Handle chat messages
+  socket.on('send-message', (data) => {
+    const { roomId, message } = data;
+    if (socket.roomId === roomId) {
+      io.to(roomId).emit('new-message', {
+        userName: socket.userName,
+        message: message,
+        timestamp: new Date(),
+        senderId: socket.id
+      });
+      console.log(`Message in ${roomId} from ${socket.userName}: ${message}`);
+    }
+  });
+  
+  // WebRTC signaling - THESE WERE MISSING!
   socket.on('offer', (data) => {
     socket.to(data.target).emit('offer', {
       offer: data.offer,
@@ -198,223 +180,6 @@ io.on('connection', (socket) => {
       candidate: data.candidate,
       sender: socket.id
     });
-  });
-  
-  // Chat Messages
-  socket.on('chat-message', (data) => {
-    const { message, type = 'text', fileData = null } = data;
-    const chatMessage = {
-      id: Date.now(),
-      sender: socket.userName,
-      senderId: socket.id,
-      message: message,
-      type: type,
-      fileData: fileData,
-      timestamp: new Date()
-    };
-    
-    // Store in room history
-    if (rooms[socket.roomId]) {
-      rooms[socket.roomId].chatHistory.push(chatMessage);
-    }
-    
-    io.to(socket.roomId).emit('chat-message', chatMessage);
-    console.log(`Chat message in ${socket.roomId}: ${socket.userName}: ${message}`);
-  });
-  
-  // Private Messages
-  socket.on('private-message', (data) => {
-    const { targetUserId, message } = data;
-    const privateMessage = {
-      id: Date.now(),
-      sender: socket.userName,
-      senderId: socket.id,
-      message: message,
-      type: 'private',
-      timestamp: new Date()
-    };
-    
-    socket.to(targetUserId).emit('private-message', privateMessage);
-    socket.emit('private-message-sent', privateMessage);
-  });
-  
-  // Screen Sharing
-  socket.on('start-screen-share', () => {
-    const room = rooms[socket.roomId];
-    if (room) {
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.isScreenSharing = true;
-        io.to(socket.roomId).emit('user-started-screen-share', {
-          userId: socket.id,
-          userName: socket.userName
-        });
-      }
-    }
-  });
-  
-  socket.on('stop-screen-share', () => {
-    const room = rooms[socket.roomId];
-    if (room) {
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.isScreenSharing = false;
-        io.to(socket.roomId).emit('user-stopped-screen-share', {
-          userId: socket.id,
-          userName: socket.userName
-        });
-      }
-    }
-  });
-  
-  // Audio/Video Controls
-  socket.on('toggle-audio', (data) => {
-    const { isMuted } = data;
-    const room = rooms[socket.roomId];
-    if (room) {
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.isMuted = isMuted;
-        io.to(socket.roomId).emit('user-audio-toggled', {
-          userId: socket.id,
-          userName: socket.userName,
-          isMuted: isMuted
-        });
-      }
-    }
-  });
-  
-  socket.on('toggle-video', (data) => {
-    const { isVideoOff } = data;
-    const room = rooms[socket.roomId];
-    if (room) {
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.isVideoOff = isVideoOff;
-        io.to(socket.roomId).emit('user-video-toggled', {
-          userId: socket.id,
-          userName: socket.userName,
-          isVideoOff: isVideoOff
-        });
-      }
-    }
-  });
-  
-  // Raise Hand Feature
-  socket.on('raise-hand', (data) => {
-    const { isHandRaised } = data;
-    const room = rooms[socket.roomId];
-    if (room) {
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.isHandRaised = isHandRaised;
-        io.to(socket.roomId).emit('user-hand-raised', {
-          userId: socket.id,
-          userName: socket.userName,
-          isHandRaised: isHandRaised
-        });
-      }
-    }
-  });
-  
-  // Reactions
-  socket.on('send-reaction', (data) => {
-    const { reaction } = data;
-    io.to(socket.roomId).emit('user-reaction', {
-      userId: socket.id,
-      userName: socket.userName,
-      reaction: reaction,
-      timestamp: Date.now()
-    });
-  });
-  
-  // Host Controls
-  socket.on('mute-all', () => {
-    const room = rooms[socket.roomId];
-    if (room && socket.isHost) {
-      room.participants.forEach(p => {
-        if (p.id !== socket.id) {
-          p.isMuted = true;
-        }
-      });
-      socket.to(socket.roomId).emit('host-muted-all');
-      io.to(socket.roomId).emit('participants-updated', room.participants);
-    }
-  });
-  
-  socket.on('mute-participant', (data) => {
-    const { targetUserId } = data;
-    const room = rooms[socket.roomId];
-    if (room && socket.isHost) {
-      const participant = room.participants.find(p => p.id === targetUserId);
-      if (participant) {
-        participant.isMuted = true;
-        socket.to(targetUserId).emit('host-muted-you');
-        io.to(socket.roomId).emit('user-audio-toggled', {
-          userId: targetUserId,
-          isMuted: true
-        });
-      }
-    }
-  });
-  
-  socket.on('remove-participant', (data) => {
-    const { targetUserId } = data;
-    const room = rooms[socket.roomId];
-    if (room && socket.isHost) {
-      socket.to(targetUserId).emit('removed-by-host');
-      room.participants = room.participants.filter(p => p.id !== targetUserId);
-      io.to(socket.roomId).emit('participants-updated', room.participants);
-    }
-  });
-  
-  socket.on('lock-room', () => {
-    const room = rooms[socket.roomId];
-    if (room && socket.isHost) {
-      room.isLocked = true;
-      io.to(socket.roomId).emit('room-locked');
-    }
-  });
-  
-  socket.on('unlock-room', () => {
-    const room = rooms[socket.roomId];
-    if (room && socket.isHost) {
-      room.isLocked = false;
-      io.to(socket.roomId).emit('room-unlocked');
-    }
-  });
-  
-  // Recording Controls
-  socket.on('start-recording', () => {
-    const room = rooms[socket.roomId];
-    if (room && socket.isHost) {
-      room.isRecording = true;
-      io.to(socket.roomId).emit('recording-started');
-    }
-  });
-  
-  socket.on('stop-recording', () => {
-    const room = rooms[socket.roomId];
-    if (room && socket.isHost) {
-      room.isRecording = false;
-      io.to(socket.roomId).emit('recording-stopped');
-    }
-  });
-  
-  // Connection Quality Updates
-  socket.on('connection-quality', (data) => {
-    const { quality } = data;
-    const room = rooms[socket.roomId];
-    if (room) {
-      const participant = room.participants.find(p => p.id === socket.id);
-      if (participant) {
-        participant.connectionQuality = quality;
-        socket.to(socket.roomId).emit('user-connection-quality', {
-          userId: socket.id,
-          quality: quality
-        });
-      }
-    }
   });
 });
 
