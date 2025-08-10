@@ -26,9 +26,9 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'simple-index.html'));
 });
 
-// Serve your beautiful zoom-style room
+// Serve your beautiful zoom-style room (copy it as simple-room.html)
 app.get('/room/:roomId', (req, res) => {
-  res.sendFile(path.join(__dirname, 'zoom-style-room.html'));
+  res.sendFile(path.join(__dirname, 'public', 'simple-room.html'));
 });
 
 // Create room API
@@ -93,7 +93,7 @@ io.on('connection', (socket) => {
     
     console.log(`${userName} joined room ${roomId}. Total: ${room.participants.length}`);
     
-    // Notify user they joined successfully (matching your UI expectations)
+    // Notify user they joined successfully
     socket.emit('room-joined', {
       roomId: roomId,
       participants: room.participants,
@@ -103,7 +103,7 @@ io.on('connection', (socket) => {
     // Notify others in room about new participant
     socket.to(roomId).emit('user-joined', participant);
     
-    // Update participant count for everyone (matching your UI)
+    // Update participant count for everyone
     io.to(roomId).emit('participant-update', {
       count: room.participants.length,
       maxCapacity: room.maxCapacity,
@@ -143,7 +143,7 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Chat messages (matching your UI)
+  // Chat messages
   socket.on('send-message', (data) => {
     const { roomId, message } = data;
     if (socket.roomId === roomId) {
@@ -156,7 +156,7 @@ io.on('connection', (socket) => {
     }
   });
   
-  // WebRTC signaling (the missing piece for video/audio!)
+  // WebRTC signaling for video/audio
   socket.on('offer', (data) => {
     socket.to(data.target).emit('offer', {
       offer: data.offer,
